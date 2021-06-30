@@ -1,44 +1,183 @@
-# Use the latest 2.1 version of CircleCI pipeline process engine. 
-# See: https://circleci.com/docs/2.0/configuration-reference
+# Use the latest 2.1 version of CircleCI pipeline process engine. See: https://circleci.com/docs/2.0/configuration-reference
 version: 2.1
-
+# Use a package of configuration called an orb.
 orbs:
-  # The Node.js orb contains a set of prepackaged CircleCI configuration you can utilize
-  # Orbs reduce the amount of configuration required for common tasks. 
-  # See the orb documentation here: https://circleci.com/developer/orbs/orb/circleci/node
-  node: circleci/node@4.1
-
+  win: circleci/windows@2.4.0
 
 jobs:
-  # Below is the definition of your job to build and test your app, you can rename and customize it as you want.
-  build-and-test:  
-    # These next lines define a Docker executor: https://circleci.com/docs/2.0/executor-types/
-    # You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
-    # A list of available CircleCI Docker Convenience Images are available here: https://circleci.com/developer/images/image/cimg/node
-    docker:
-      - image: cimg/node:15.1
-    # Then run your tests!
-    # CircleCI will report the results back to your VCS provider.
-    steps:
-      # Checkout the code as the first step.
-      - checkout
-      # Next, the node orb's install-packages step will install the dependencies from a package.json.
-      # The orb install-packages step will also automatically cache them for faster future runs.
-      - node/install-packages
-      # If you are using yarn instead npm, remove the line above and uncomment the two lines below.
-      # - node/install-packages:
-      #     pkg-manager: yarn 
-      - run:
-          name: Run tests
-          command: npm test
+  build:
+    executor:
+      name: win/default
+      shell: powershell.exe
 
-workflows:
-  # Below is the definition of your workflow.
-  # Inside the workflow, you provide the jobs you want to run, e.g this workflow runs the build-and-test job above.
-  # CircleCI will run this workflow on every commit.
-  # For more details on extending your workflow, see the configuration docs: https://circleci.com/docs/2.0/configuration-reference/#workflows
-  sample: 
-    jobs:
-      - build-and-test
-      # For running simple node tests, you could optionally use the node/test job from the orb to replicate and replace the job above in fewer lines.
-      # - node/test
+    steps:
+      - run:
+          name: "Update Powershell"
+          command: |
+           choco install powershell-core -y
+          shell: powershell.exe
+      - run:
+          name: "test PS ver"
+          command: |
+             $PSVersionTable
+          shell: pwsh.exe
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-app
+      - run:
+          name: "Install project dependencies"
+          command: npm install
+      - save_cache:
+          key: v1-app
+          paths:
+            - C:\Users\circleci\.nuget\packages
+      - run:
+          name: "Run HCL AppScan Static Analysis"
+          command: |
+            $baseURL = 'https://cloud.appscan.com/api/V2'
+            #$env:ASoC_IRX_Config_file = "C:\Users\circleci\project\appscan-config.xml"
+            $env:ASoC_appID = '3288f340-9613-4a34-bb8f-474dc162f077'
+            $env:ASoC_scanName = 'Automated Scan from Circle CI'
+            $env:ASoC_IRX_Config_file = "C:\Users\circleci\project\appscan-config.xml"
+            $bearer_token =''
+            $jsonBody = "
+              {
+              `"KeyId`": `"$env:ASoC_API_Key`",
+              `"KeySecret`": `"$env:ASoC_API_Secret`"
+              }
+            "
+            $params = @{
+            Uri         = "$baseURL/Account/ApiKeyLogin"
+            Method      = 'POST'
+            Body        = $jsonBody
+            Headers = @{
+                'Content-Type' = 'application/json'
+            }
+            }
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12
+            $Members = Invoke-RestMethod @params
+            Write-Host "Auth successful - Token received: $Members.token"
+            $bearer_token = $Members.token
+            $ProgressPreference = 'SilentlyContinue'
+            
+            # ASoC -  Download the latest version of SAClientUtil to generate the .irx in preparation for the scan
+            Write-Host "Downloading latest verion of SAClientUtil..."
+            Invoke-WebRequest -Uri "https://cloud.appscan.com/api/Local/StaticAnalyzer/ARSATool" -OutFile "saclientutil.zip"
+            Expand-Archive -Path "saclientutil.zip" -DestinationPath "saclientutil"
+            $SAClientUtilFolder = Get-ChildItem -Path .\saclientutil
+            $command = ".\saclientutil\" + $SAClientUtilFolder.name + "\bin\appscan.bat"
+            & $command prepare -c $env:ASoC_IRX_Config_file -n output.irx
+
+            $irx_file = [IO.File]::ReadAllBytes('output.irx')
+            $params = @{
+              Uri         = "$baseURL/FileUpload"
+              Method      = 'Post'
+              Headers = @{
+                    'Content-Type' = 'multipart/form-data'
+                    Authorization = "Bearer $bearer_token"
+                }
+               Form = @{
+                'fileToUpload' = Get-Item -Path "output.irx"
+             }
+            }
+            $upload = Invoke-RestMethod @params
+            $upload_File_ID = $upload.FileId
+            write-host "IRX Uploaded File ID: $upload_File_ID"
+            $params = @{
+                Uri         = "$baseURL/Scans/StaticAnalyzer"
+                Method      = 'Post'
+                Headers = @{
+                    'Content-Type' = 'application/json'
+                    Authorization = "Bearer $bearer_token"
+                }
+            }
+            $body = @{
+               'ApplicationFileId' = "$upload_File_ID"
+               'ScanName' = "$env:ASoC_scanName"
+               'EnableMailNotification' = "true"
+               'Locale' = "en-US"
+               'AppId' = "$env:ASoC_appID"
+               'Execute' = "true"
+               'FullyAutomatic' = "false"
+               'Personal' = "false"
+            }
+            $output_runscan = Invoke-RestMethod @params -Body ($body|ConvertTo-JSON)
+            write-host "Scan executed"
+            Write-Host $output_runscan
+            $scan_ID = $output_runscan.Id
+            $params = @{
+                Uri         = "$baseURL/Scans/$scan_ID/Executions"
+                Method      = 'Get'
+                Headers = @{
+                    'Content-Type' = 'application/json'
+                    Authorization = "Bearer $bearer_token"
+                }
+            }
+            $scan_status ="Not Ready"
+            while($scan_status -ne "Ready"){
+                $output = Invoke-RestMethod @params
+                $scan_status = $output.Status
+                Start-Sleep -Seconds 10
+                Write-Host "Waiting for Scan Completion..."
+            }
+            $params = @{
+                Uri         = "$baseURL/Reports/Security/Scan/$scan_ID"
+                Method      = 'Post'
+                Headers = @{
+                    'Content-Type' = 'application/json'
+                    Authorization = "Bearer $bearer_token"
+                }
+            }
+            $body = @{
+                'Configuration' = @{
+                    'Summary' = "true"
+                    'Details' = "true"
+                    'Discussion' = "true"
+                    'Overview' = "true"
+                    'TableOfContent' = "true"
+                    'Advisories' = "true"
+                    'FixRecommendation' = "true"
+                    'History' = "true"
+                    'Coverage' = "true"
+                    'MinimizeDetails' = "true"
+                    'Articles' = "true"
+                    'ReportFileType' = "HTML"
+                    'Title' = "false"
+                    'Locale' = "en-US"
+                }
+            }
+            $output_runreport = Invoke-RestMethod @params -Body ($body|ConvertTo-JSON)
+            $report_ID = $output_runreport.Id
+            #Wait for report
+            $params = @{
+                Uri         = "$baseURL/Reports/$report_ID"
+                Method      = 'Get'
+                Headers = @{
+                    'Content-Type' = 'application/json'
+                    Authorization = "Bearer $bearer_token"
+                }
+            }
+            $report_status ="Not Ready"
+            while($report_status -ne "Ready"){
+                $output = Invoke-RestMethod @params
+                $report_status = $output.Status
+                Start-Sleep -Seconds 5
+                Write-Host "Generating Report... Progress: " $output.Progress "%"
+            }
+            #Download Report
+            $params = @{
+                Uri         = "$baseURL/Reports/Download/$report_ID"
+                Method      = 'Get'
+                Headers = @{
+                    'Accept' = 'text/html'
+                    Authorization = "Bearer $bearer_token"
+                }
+            }
+            $output_runreport = Invoke-RestMethod @params
+            Out-File -InputObject $output_runreport -FilePath .\AppScan_Security_Report.html
+
+          shell: pwsh.exe
+      - store_artifacts:
+          path: AppScan_Security_Report.html
+
