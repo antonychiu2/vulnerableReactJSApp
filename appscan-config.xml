@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <Configuration>
   <Targets>
-    <Target path=""/>
+    <Target path=".">
+      <Exclude>saclientutil/</Exclude>
+    </Target>
   </Targets>
 </Configuration>
