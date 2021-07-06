@@ -1,56 +1,46 @@
-# Reactvulna
+# Introduction
+This is an example that demonstrate the ease of use of ASoC's powerful REST API capabilities integrating with Circle CI. 
 
-## Table of Contents
-1. [Introduction](#Introduction)
-2. [Building, running the application](#Build)
-3. [Configuring a backend](#Backend)
-4. [Exercises](#Exercises)
-    1.  [Exercise 1 - XSS](#Exercise_xss)
-    1.  [Exercise 2 - Websocket](#Exercise_websocket)
-    1.  [Exercise 3 - CSRF](#Exercise_csrf)
-    1.  [Exercise 4 - Tabnabbing](#Exercise_tabnab)
+Within 7 simple REST API method calls, we were was able to check out a source code from a github repo, have a SAST scan submitted into ASoC for static analysis and get scan result/report back. 
 
-<a name="Introduction"></a>
-Reactvulna is a deliberately vulnerable react application. [Create React App](https://github.com/facebookincubator/create-react-app). It uses the [javulna](https://github.com/edu-secmachine/javulna) backend. Reactvulna (together with the javulna backend) is a movie-related application, where you can log in and out, read information about movies, buy movie-related objects, send messages to other users of the application, etc. The functionalities are far from complete or coherent, they just serve the purpose of demonstrating specific vulnerabilities. This document contains exercises which can be done with Reactvulna to understand how to exploit and how to fix specific vulnerabilities.
+The example shows the process of scanning a node JS project using React. The full Circle CI YAML script is in the file config.yml
 
-<a name="Build"></a>
-## Building, running the application
+# ASoC REST API used in this example 
 
-Run `npm start` for a dev server. Navigate to `http://localhost:4200/`. The app will automatically reload if you change any of the source files.  
-  
-Or
+`Account/ApiKeyLogin`
 
-Run `npm run build` to build the project. Set up your favourite HTTP server so that a visitor to your site is served `index.html`, and requests to static paths like `/static/js/main.<hash>.js` are served with the contents of the `/static/js/main.<hash>.js` file.    
+`/FileUpload`
 
-<a name="Backend"></a>
-## Configuring a backend
-Reactvulna uses by default a backend hosted on Google Cloud. This cloud instance is live only for limited periods. If you want to use it with your own backend, get the [javulna](https://github.com/edu-secmachine/javulna) application and run it. Than configure Reactvulna to use your local backend by changing the baseUrl attribute in environments/environment.ts, and environments/environment.prod.ts
- 
-<a name="Exercises"></a>
-## Exercises 
+`/Scans/StaticAnalyzer`
 
-<a name="Exercise_xss"></a>
-### Exercise 1 – Xss
-The application contains several XSS vulnerabilities in the Users page! Find the vulnerabilities, and exploit them!  
-Then check the source-code, and fix it!  
-Discuss what could be the developer's reason for choosing the vulnerable solutions!
+`/Scans/$scan_ID/Executions`
 
-<a name="Exercise_websocket"></a>
-### Exercise 2 – Websocket
-The application uses websocket to implement a chat functionality!  
-Alas, it contains some vulnerabilities within it's implementation. Find an authenticaton-related vulnerability!  
-How would you exploit it?    
-How could you fix it?!
+`/Reports/Security/Scan/$scan_ID`
 
-<a name="Exercise_csrf"></a>
-### Exercise 3 – CSRF
-The application is vulnerable to  CSRF! 
-Find the CSRF vulnerability, and exploit it!  
-How would you fix this vulnerability?
+`/Reports/$report_ID`
 
-<a name="Exercise_tabnab"></a>
-### Exercise 4 – Tabnabbing
-The application is vulnerable to Tabnabbing! Find the vulnerable place, and exploit it!  
-Fix the vulnerability!  
+`/Reports/Download/$report_ID`
 
+# ASoC's full REST API list:
+https://cloud.appscan.com/swagger/ui/index
+
+# To set this up, first setup ASoC API Key and Secret as environment variables for the Circle CI project
+
+![1](https://user-images.githubusercontent.com/5158535/118554892-47b75b00-b71f-11eb-8892-9b2b90e65dbf.png)
+
+
+# Screenshot of the pipeline steps
+
+![2](https://user-images.githubusercontent.com/5158535/118554911-4dad3c00-b71f-11eb-99d4-72aff2414c50.png)
+
+
+
+# The report is automatically saved as a Circle CI artifact
+
+![3](https://user-images.githubusercontent.com/5158535/118554932-53a31d00-b71f-11eb-93f7-1d226895ea1f.png)
+
+
+# Checking out the "html" report in Circle CI
+
+![4](https://user-images.githubusercontent.com/5158535/118554941-56057700-b71f-11eb-8457-41555f608789.png)
 
